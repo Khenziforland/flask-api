@@ -1,20 +1,13 @@
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
+from db import db
 from flask_restful import Api, Resource, reqparse, fields, marshal_with, abort
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data.db'
-db = SQLAlchemy(app)
+db.init_app(app)
 api = Api(app)
 
-class UserModel(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
-    password = db.Column(db.String(120), nullable=False)
-
-    def __repr__(self):
-        return f'<User username={self.username}, email={self.email}, password={self.password}>'
+from Models.User import UserModel
 
 user_args = reqparse.RequestParser()
 user_args.add_argument("username", type=str, help="Username is required", required=True)
@@ -49,6 +42,17 @@ class CreateData(Resource):
     @marshal_with(userFields)
     def post(self):
         args = user_args.parse_args()
+        
+        # Periksa apakah username sudah ada
+        existing_username = UserModel.query.filter_by(username=args['username']).first()
+        if existing_username:
+            abort(400, message="Username sudah digunakan")
+        
+        # Periksa apakah email sudah ada
+        existing_email = UserModel.query.filter_by(email=args['email']).first()
+        if existing_email:
+            abort(400, message="Email sudah digunakan")
+        
         user = UserModel(username=args['username'], email=args['email'], password=args['password'])
         db.session.add(user)
         db.session.commit()
@@ -60,12 +64,22 @@ class UpdateData(Resource):
     def put(self, id):
         args = user_args.parse_args()
 
-        # Check ID
+        # Periksa ID
         user = UserModel.query.get(id)
         if not user:
-            abort(404, message="User not found")
+            abort(404, message="User tidak ditemukan")
         
-        # Update Data
+        # Periksa apakah username baru sudah digunakan oleh pengguna lain
+        existing_username = UserModel.query.filter(UserModel.username == args['username'], UserModel.id != id).first()
+        if existing_username:
+            abort(400, message="Username sudah digunakan oleh pengguna lain")
+        
+        # Periksa apakah email baru sudah digunakan oleh pengguna lain
+        existing_email = UserModel.query.filter(UserModel.email == args['email'], UserModel.id != id).first()
+        if existing_email:
+            abort(400, message="Email sudah digunakan oleh pengguna lain")
+        
+        # Perbarui Data
         user.username = args['username']
         user.email = args['email']
         user.password = args['password']
